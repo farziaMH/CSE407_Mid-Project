@@ -131,11 +131,17 @@ with right_col:
 with left_col:
     st.title("💡 Farzia - IoT Energy Monitoring Dashboard")
 
-if not IS_CLOUD:
-    colA, colB = st.columns([1, 4])
-    with colA:
+colA, colB = st.columns([1, 4])
+with colA:
+    if IS_CLOUD:
+        st.button("🔌 Turn ON (disabled)", disabled=True)
+        st.button("💡 Turn OFF (disabled)", disabled=True)
+    else:
         st.button("🔌 Turn ON", on_click=toggle_device, args=(True,))
         st.button("💡 Turn OFF", on_click=toggle_device, args=(False,))
+
+st.info("🔒 Tuya device control is disabled in cloud mode.")
+
 
 # Metrics
 df, status = update_history_row()
