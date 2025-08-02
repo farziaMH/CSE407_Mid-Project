@@ -6,6 +6,10 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import os
 
+IS_CLOUD = os.getenv("STREAMLIT_CLOUD", "0") == "1"
+
+
+
 # --------------- Device Setup ---------------
 DEVICE_ID = "bf1fb51a6032098478au4s"
 LOCAL_KEY = "ZD@.!(|l[$V|3K=F"
@@ -16,8 +20,10 @@ unit_cost_bdt = 6
 csv_path = "energy_history.csv"
 
 # Tuya device setup
-device = tinytuya.OutletDevice(DEVICE_ID, LOCAL_IP, LOCAL_KEY)
-device.set_version(VERSION)
+if not IS_CLOUD:
+    device = tinytuya.OutletDevice(DEVICE_ID, LOCAL_IP, LOCAL_KEY)
+    device.set_version(VERSION)
+
 
 # Session state init
 if 'history' not in st.session_state:
@@ -41,37 +47,57 @@ if 'accumulated_kwh' not in st.session_state:
 # Device status getter
 def get_device_status():
     try:
-        status = device.status()
-        dps = status.get('dps', {})
+        if IS_CLOUD:
+            # Fake/mock values for Streamlit Cloud
+            power_on = True
+            power = 25.0
+            voltage = 220.0
+            current = 0.25  # in A
+            current_ma = current * 1000.0
+            incremental_kwh = 0.0001
+            cost = 0.0001 * unit_cost_bdt
+            duration_minutes = 5
 
-        power_on = dps.get('1', False)
-        power = dps.get('19', 0) / 10.0
-        voltage = dps.get('20', 0) / 10.0
-        current = dps.get('18', 0) / 1000.0
+            # Simulate energy increase
+            st.session_state.accumulated_kwh += incremental_kwh
 
-        current_time = datetime.now()
-        delta_time_hours = (current_time - st.session_state.last_update_time).total_seconds() / 3600.0
-        st.session_state.last_update_time = current_time
+            return power_on, power, voltage, current_ma, st.session_state.accumulated_kwh, cost, duration_minutes
 
-        incremental_kwh = (power / 1000.0) * delta_time_hours
-        st.session_state.accumulated_kwh += incremental_kwh
-
-        current_ma = current * 1000.0
-        cost = st.session_state.accumulated_kwh * unit_cost_bdt
-
-        if power_on:
-            if not st.session_state.on_time:
-                st.session_state.on_time = datetime.now()
-            else:
-                st.session_state.duration_minutes = int((datetime.now() - st.session_state.on_time).total_seconds() / 60)
         else:
-            st.session_state.on_time = None
-            st.session_state.duration_minutes = 0
+            # Real device reading (local only)
+            status = device.status()
+            dps = status.get('dps', {})
 
-        return power_on, power, voltage, current_ma, st.session_state.accumulated_kwh, cost, st.session_state.duration_minutes
+            power_on = dps.get('1', False)
+            power = dps.get('19', 0) / 10.0
+            voltage = dps.get('20', 0) / 10.0
+            current = dps.get('18', 0) / 1000.0
+
+            current_time = datetime.now()
+            delta_time_hours = (current_time - st.session_state.last_update_time).total_seconds() / 3600.0
+            st.session_state.last_update_time = current_time
+
+            incremental_kwh = (power / 1000.0) * delta_time_hours
+            st.session_state.accumulated_kwh += incremental_kwh
+
+            current_ma = current * 1000.0
+            cost = st.session_state.accumulated_kwh * unit_cost_bdt
+
+            if power_on:
+                if not st.session_state.on_time:
+                    st.session_state.on_time = datetime.now()
+                else:
+                    st.session_state.duration_minutes = int((datetime.now() - st.session_state.on_time).total_seconds() / 60)
+            else:
+                st.session_state.on_time = None
+                st.session_state.duration_minutes = 0
+
+            return power_on, power, voltage, current_ma, st.session_state.accumulated_kwh, cost, st.session_state.duration_minutes
+
     except Exception as e:
         st.warning(f"Error: {e}")
         return False, 0, 0, 0, 0, 0, 0
+
 
 # Data update
 def update_history_row():
@@ -121,10 +147,14 @@ with left_col:
     st.title("💡 Farzia - IoT Energy Monitoring Dashboard")
 
 # Control buttons
-colA, colB = st.columns([1, 4])
-with colA:
-    st.button("🔌 Turn ON", on_click=toggle_device, args=(True,))
-    st.button("💡 Turn OFF", on_click=toggle_device, args=(False,))
+if not IS_CLOUD:
+    colA, colB = st.columns([1, 4])
+    with colA:
+        st.button("🔌 Turn ON", on_click=toggle_device, args=(True,))
+        st.button("💡 Turn OFF", on_click=toggle_device, args=(False,))
+
+
+
 
 # Read status
 df, status = update_history_row()
